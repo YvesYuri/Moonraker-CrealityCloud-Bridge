@@ -84,6 +84,12 @@ Examples:
         help="Video server port (default: 8080)",
     )
     parser.add_argument(
+        "--camera-device",
+        type=str,
+        default="/dev/video0",
+        help="Camera device path (default: /dev/video0)",
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Enable verbose/debug logging",
@@ -110,6 +116,8 @@ Examples:
         bridge.config.set("region", args.region)
     if args.video_port:
         bridge.config.set("video_port", args.video_port)
+    if args.camera_device:
+        bridge.config.set("camera_device", args.camera_device)
 
     if args.token:
         logger.info("Setting up device with token...")

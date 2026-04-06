@@ -11,9 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 class VideoServer:
-    def __init__(self, host="0.0.0.0", port=8080):
+    def __init__(self, host="0.0.0.0", port=8080, camera_device="/dev/video0"):
         self.host = host
         self.port = port
+        self.camera_device = camera_device
         self._running = False
         self._thread = None
         self._flask_app = None
@@ -22,11 +23,11 @@ class VideoServer:
         self._check_camera()
 
     def _check_camera(self):
-        self._camera_available = os.path.exists("/dev/video0")
+        self._camera_available = os.path.exists(self.camera_device)
         if self._camera_available:
-            logger.info("Camera detected at /dev/video0")
+            logger.info(f"Camera detected at {self.camera_device}")
         else:
-            logger.warning("No camera found at /dev/video0")
+            logger.warning(f"No camera found at {self.camera_device}")
 
     def is_camera_available(self):
         return self._camera_available
@@ -62,7 +63,7 @@ class VideoServer:
                     try:
                         ffmpeg_cmd = [
                             "ffmpeg",
-                            "-i", "/dev/video0",
+                            "-i", self.camera_device,
                             "-vcodec", "libx264",
                             "-tune", "zerolatency",
                             "-preset", "ultrafast",
@@ -101,7 +102,7 @@ class VideoServer:
                     try:
                         ffmpeg_cmd = [
                             "ffmpeg",
-                            "-i", "/dev/video0",
+                            "-i", self.camera_device,
                             "-vcodec", "mjpeg",
                             "-q:v", "5",
                             "-f", "jpeg",

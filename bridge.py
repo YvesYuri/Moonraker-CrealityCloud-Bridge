@@ -47,6 +47,7 @@ class MoonrakerCrealityBridge:
         self.moonraker = None
         self.mqtt = None
         self.video_server = None
+        self.webrtc_manager = None
 
         self._state = STATE_IDLE
         self._pause = 0
@@ -69,6 +70,7 @@ class MoonrakerCrealityBridge:
         self._autohome = 0
         self._connect_state = 0
         self._video = 0
+        self._camera_device = self.config.get("camera_device", "/dev/video0")
 
         self._telemetry_buffer = {}
         self._attributes_buffer = {}
@@ -152,6 +154,8 @@ class MoonrakerCrealityBridge:
 
     def disconnect(self):
         self._running = False
+        if self.webrtc_manager:
+            self.webrtc_manager.stop()
         if self.video_server:
             self.video_server.stop()
         if self.mqtt:
@@ -162,17 +166,35 @@ class MoonrakerCrealityBridge:
 
     def _init_video_server(self):
         video_port = self.config.get("video_port", 8080)
-        self.video_server = VideoServer(port=video_port)
+        self.video_server = VideoServer(port=video_port, camera_device=self._camera_device)
 
         if self.video_server.is_camera_available():
             self._video = 1
             self._set_attribute("video", 1)
             self.video_server.start()
+            self._init_webrtc()
             logger.info("Video server initialized")
         else:
             self._video = 0
             self._set_attribute("video", 0)
             logger.info("No camera available, video server not started")
+
+    def _init_webrtc(self):
+        try:
+            from webrtc_manager import WebRTCManager
+
+            cfg = self.config.data()
+            self.webrtc_manager = WebRTCManager(
+                device_name=cfg["deviceName"],
+                token=cfg["deviceSecret"],
+                region=cfg.get("region", 1),
+                camera_device=self._camera_device,
+                verbose=False
+            )
+            self.webrtc_manager.start()
+            logger.info("WebRTC manager started")
+        except Exception as e:
+            logger.error(f"Failed to start WebRTC manager: {e}")
 
     def _fetch_printer_model(self):
         try:

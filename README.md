@@ -11,6 +11,15 @@ A bridge that connects **Klipper (via Moonraker)** to **Creality Cloud**, allowi
 └─────────────────┘         └──────────────────┘         └─────────────────────┘
          ▲                           ▲                            ▲
     Klipper                    Python Script              Creality Cloud App
+         │                           │
+         │                    ┌──────┴──────┐
+         │                    │ WebRTC      │
+         │                    │ (video)     │
+         │                    └─────────────┘
+         │                           │
+         ▼                           ▼
+   /dev/videoX              Creality Cloud App
+   (camera)                   (live stream)
 ```
 
 ## Features
@@ -37,17 +46,19 @@ A bridge that connects **Klipper (via Moonraker)** to **Creality Cloud**, allowi
 - List local files
 - Print local file
 
-### Video Streaming
-- Live camera streaming (when camera is available)
-- MJPEG and FLV stream support
-- Automatically detects `/dev/video0`
+### Video Streaming (WebRTC)
+- Live camera streaming via WebRTC
+- Full integration with Creality Cloud app
+- Automatically detects camera device
+- Fetches ICE servers from Creality API
 
 ## Prerequisites
 
 - Python 3.7+
 - Moonraker running and accessible
 - Creality Cloud account with device token
-- FFmpeg (for video streaming): `sudo apt-get install ffmpeg`
+- FFmpeg and libavcodec (for video): `sudo apt-get install ffmpeg libavcodec-extra`
+- Python aiortc and av packages
 
 ## Installation
 
@@ -55,11 +66,11 @@ A bridge that connects **Klipper (via Moonraker)** to **Creality Cloud**, allowi
 # Clone or copy to the Moonraker machine
 cd moonraker-crealitycloud-bridge
 
-# Install dependencies
-pip install -r requirements.txt
+# Install system dependencies
+sudo apt-get install ffmpeg libavcodec-extra
 
-# Install FFmpeg (for camera support)
-sudo apt-get install ffmpeg
+# Install Python dependencies
+pip install -r requirements.txt
 ```
 
 ## Setup
@@ -93,6 +104,7 @@ python3 main.py
 --moonraker-api-key KEY    Moonraker API key (if required)
 --region 0|1               0=China, 1=Overseas (default: 1)
 --video-port PORT          Video server port (default: 8080)
+--camera-device PATH       Camera device path (default: /dev/video0)
 --config-dir DIR           Directory for config files (default: script dir)
 --verbose, -v              Enable verbose/debug logging
 --version                  Show bridge version
@@ -103,6 +115,9 @@ python3 main.py
 ```bash
 # Initial setup
 python3 main.py --token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Custom camera device (e.g., /dev/video5)
+python3 main.py --camera-device /dev/video5
 
 # Custom Moonraker URL
 python3 main.py --moonraker http://192.168.1.100:7125
@@ -121,13 +136,13 @@ python3 main.py --video-port 9090
 
 ### Prerequisites
 
-1. **Install FFmpeg**:
+1. **Install FFmpeg and codecs**:
    ```bash
-   sudo apt-get install ffmpeg
+   sudo apt-get install ffmpeg libavcodec-extra
    ```
 
 2. **Connect your camera**:
-   - USB webcam: Plug in and verify with `ls /dev/video0`
+   - USB webcam: Plug in and verify with `ls /dev/video*`
    - Raspberry Pi Camera: Enable in raspi-config and verify
 
 3. **Test camera**:
@@ -141,18 +156,20 @@ python3 main.py --video-port 9090
 
 ### How It Works
 
-The bridge starts a video server that:
-- Detects if a camera is available at `/dev/video0`
-- Starts automatically if camera is detected
-- Streams video via HTTP on port 8080 (configurable)
+The bridge implements **WebRTC** for video streaming to be fully compatible with the Creality Cloud app:
 
-**Endpoints:**
-- `http://localhost:8080/` - Status page
-- `http://localhost:8080/live` - FLV stream
-- `http://localhost:8080/mjpeg` - MJPEG stream
-- `http://localhost:8080/status` - JSON status
+1. **Camera Detection**: Checks if the specified camera device exists
+2. **WebRTC Setup**: 
+   - Fetches ICE servers from Creality API (`/api/cxy/v2/webrtc/iceServersJwt`)
+   - Connects to Creality signaling server via WebSocket
+   - Handles SDP offer/answer exchange
+3. **Video Stream**: Uses `aiortc` library to capture from V4L2 device and stream via WebRTC
 
-**Note:** The Creality Cloud app expects a P2P video stream. For full app compatibility, you may need to configure P2P settings (`InitString`, `APILicense`, `DIDString`) through the app or manually.
+### Configuration
+
+- Default camera: `/dev/video0`
+- Custom camera: Use `--camera-device /dev/video5` (or your device)
+- The app will show camera icon when `video=1` is sent via MQTT
 
 ## Running as a Service (systemd)
 
@@ -169,7 +186,7 @@ After=network.target moonraker.service
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/moonraker-crealitycloud-bridge
-ExecStart=/usr/bin/python3 /home/pi/moonraker-crealitycloud-bridge/main.py
+ExecStart=/usr/bin/python3 /home/pi/moonraker-crealitycloud-bridge/main.py --camera-device /dev/video5
 Restart=always
 RestartSec=10
 
@@ -195,7 +212,8 @@ sudo systemctl status creality-bridge
   "region": 1,
   "moonraker_url": "http://localhost:7125",
   "moonraker_api_key": null,
-  "video_port": 8080
+  "video_port": 8080,
+  "camera_device": "/dev/video0"
 }
 ```
 
@@ -264,20 +282,41 @@ Run with `--token` to set up the device.
 - The bridge uses `extruder.temperature` and `heater_bed.temperature` from Moonraker
 
 ### Camera not working
-- Verify camera: `ls /dev/video0`
-- Test FFmpeg: `ffmpeg -i /dev/video0 -t 5 /tmp/test.mp4`
-- Install FFmpeg: `sudo apt-get install ffmpeg`
-- Check video server: `curl http://localhost:8080/status`
+- Verify camera exists: `ls -la /dev/video*`
+- Test FFmpeg: `ffmpeg -i /dev/video5 -t 5 /tmp/test.mp4`
+- Install FFmpeg: `sudo apt-get install ffmpeg libavcodec-extra`
+- Check if av library works: `python3 -c "import av; print(av.__version__)"`
 
-### Video server port conflict
-- Use `--video-port` to change port
-- Check for conflicts: `netstat -tlnp | grep 8080`
+### WebRTC issues
+- Check ICE servers are being fetched (use `--verbose`)
+- Verify WebSocket connection to Creality signaling server
+- Check firewall allows outbound WebSocket connections
 
-## Limitations
+### Video loads but doesn't play in app
+- Ensure `video=1` attribute is being sent to Creality Cloud
+- Check that WebRTC manager started without errors
+- Verify ICE servers were obtained from Creality API
 
-- **P2P Camera**: P2P configuration (`InitString`, `APILicense`, `DIDString`) is supported, but full P2P streaming may require additional setup depending on your printer model
-- **LED**: LED control depends on printer firmware (G-code M224/M225/M936)
-- **Large files**: Downloading .gcode.gz files from the cloud may take time
+## Architecture Details
+
+### WebRTC Flow
+
+```
+1. Bridge starts → Fetches ICE servers from Creality API
+2. Bridge connects to Creality signaling server (WebSocket)
+3. App opens → Requests video stream from server
+4. Server sends "offer" via signaling channel
+5. Bridge receives offer → Creates answer with camera stream
+6. ICE negotiation → Direct P2P video stream established
+7. Video flows directly from camera to app
+```
+
+### Dependencies
+
+- `aiortc`: WebRTC implementation
+- `av` (PyAV): Video capture from V4L2 devices
+- `websocket-client`: WebSocket connection to Creality signaling
+- `tb-mqtt-client`: ThingsBoard MQTT for telemetry/attributes
 
 ## License
 
