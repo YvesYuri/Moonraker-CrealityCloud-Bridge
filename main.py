@@ -78,6 +78,12 @@ Examples:
         help="Directory for config files (default: script directory)",
     )
     parser.add_argument(
+        "--video-port",
+        type=int,
+        default=8080,
+        help="Video server port (default: 8080)",
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Enable verbose/debug logging",
@@ -102,6 +108,8 @@ Examples:
         bridge.config.set("moonraker_api_key", args.moonraker_api_key)
     if args.region is not None:
         bridge.config.set("region", args.region)
+    if args.video_port:
+        bridge.config.set("video_port", args.video_port)
 
     if args.token:
         logger.info("Setting up device with token...")

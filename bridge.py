@@ -14,6 +14,7 @@ import requests
 from config import BridgeConfig
 from creality_mqtt import CrealityMQTT
 from moonraker_client import MoonrakerClient
+from video_server import VideoServer
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class MoonrakerCrealityBridge:
         self.config = BridgeConfig(config_dir)
         self.moonraker = None
         self.mqtt = None
+        self.video_server = None
 
         self._state = STATE_IDLE
         self._pause = 0
@@ -66,6 +68,7 @@ class MoonrakerCrealityBridge:
         self._led_state = 0
         self._autohome = 0
         self._connect_state = 0
+        self._video = 0
 
         self._telemetry_buffer = {}
         self._attributes_buffer = {}
@@ -135,6 +138,8 @@ class MoonrakerCrealityBridge:
         self._fetch_printer_model()
         self._fetch_file_list()
 
+        self._init_video_server()
+
         self._running = True
         self._upload_timer = threading.Thread(target=self._upload_loop, daemon=True)
         self._upload_timer.start()
@@ -147,11 +152,27 @@ class MoonrakerCrealityBridge:
 
     def disconnect(self):
         self._running = False
+        if self.video_server:
+            self.video_server.stop()
         if self.mqtt:
             self.mqtt.disconnect()
         if self.moonraker:
             self.moonraker.disconnect()
         logger.info("Bridge disconnected")
+
+    def _init_video_server(self):
+        video_port = self.config.get("video_port", 8080)
+        self.video_server = VideoServer(port=video_port)
+
+        if self.video_server.is_camera_available():
+            self._video = 1
+            self._set_attribute("video", 1)
+            self.video_server.start()
+            logger.info("Video server initialized")
+        else:
+            self._video = 0
+            self._set_attribute("video", 0)
+            logger.info("No camera available, video server not started")
 
     def _fetch_printer_model(self):
         try:

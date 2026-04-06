@@ -37,11 +37,17 @@ A bridge that connects **Klipper (via Moonraker)** to **Creality Cloud**, allowi
 - List local files
 - Print local file
 
+### Video Streaming
+- Live camera streaming (when camera is available)
+- MJPEG and FLV stream support
+- Automatically detects `/dev/video0`
+
 ## Prerequisites
 
 - Python 3.7+
 - Moonraker running and accessible
 - Creality Cloud account with device token
+- FFmpeg (for video streaming): `sudo apt-get install ffmpeg`
 
 ## Installation
 
@@ -51,6 +57,9 @@ cd moonraker-crealitycloud-bridge
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Install FFmpeg (for camera support)
+sudo apt-get install ffmpeg
 ```
 
 ## Setup
@@ -83,6 +92,7 @@ python3 main.py
 --moonraker URL            Moonraker URL (default: http://localhost:7125)
 --moonraker-api-key KEY    Moonraker API key (if required)
 --region 0|1               0=China, 1=Overseas (default: 1)
+--video-port PORT          Video server port (default: 8080)
 --config-dir DIR           Directory for config files (default: script dir)
 --verbose, -v              Enable verbose/debug logging
 --version                  Show bridge version
@@ -102,7 +112,47 @@ python3 main.py --moonraker-api-key YOUR_API_KEY
 
 # China region + verbose
 python3 main.py --region 0 --verbose
+
+# Custom video port
+python3 main.py --video-port 9090
 ```
+
+## Camera Setup
+
+### Prerequisites
+
+1. **Install FFmpeg**:
+   ```bash
+   sudo apt-get install ffmpeg
+   ```
+
+2. **Connect your camera**:
+   - USB webcam: Plug in and verify with `ls /dev/video0`
+   - Raspberry Pi Camera: Enable in raspi-config and verify
+
+3. **Test camera**:
+   ```bash
+   # List available cameras
+   v4l2-ctl --list-devices
+   
+   # Test video capture
+   ffmpeg -i /dev/video0 -t 5 /tmp/test.mp4
+   ```
+
+### How It Works
+
+The bridge starts a video server that:
+- Detects if a camera is available at `/dev/video0`
+- Starts automatically if camera is detected
+- Streams video via HTTP on port 8080 (configurable)
+
+**Endpoints:**
+- `http://localhost:8080/` - Status page
+- `http://localhost:8080/live` - FLV stream
+- `http://localhost:8080/mjpeg` - MJPEG stream
+- `http://localhost:8080/status` - JSON status
+
+**Note:** The Creality Cloud app expects a P2P video stream. For full app compatibility, you may need to configure P2P settings (`InitString`, `APILicense`, `DIDString`) through the app or manually.
 
 ## Running as a Service (systemd)
 
@@ -144,7 +194,8 @@ sudo systemctl status creality-bridge
   "iotType": 2,
   "region": 1,
   "moonraker_url": "http://localhost:7125",
-  "moonraker_api_key": null
+  "moonraker_api_key": null,
+  "video_port": 8080
 }
 ```
 
@@ -212,9 +263,19 @@ Run with `--token` to set up the device.
 - Verify sensors are correctly configured in Klipper
 - The bridge uses `extruder.temperature` and `heater_bed.temperature` from Moonraker
 
+### Camera not working
+- Verify camera: `ls /dev/video0`
+- Test FFmpeg: `ffmpeg -i /dev/video0 -t 5 /tmp/test.mp4`
+- Install FFmpeg: `sudo apt-get install ffmpeg`
+- Check video server: `curl http://localhost:8080/status`
+
+### Video server port conflict
+- Use `--video-port` to change port
+- Check for conflicts: `netstat -tlnp | grep 8080`
+
 ## Limitations
 
-- **P2P Camera**: P2P string configuration is supported, but video streaming requires additional setup
+- **P2P Camera**: P2P configuration (`InitString`, `APILicense`, `DIDString`) is supported, but full P2P streaming may require additional setup depending on your printer model
 - **LED**: LED control depends on printer firmware (G-code M224/M225/M936)
 - **Large files**: Downloading .gcode.gz files from the cloud may take time
 
