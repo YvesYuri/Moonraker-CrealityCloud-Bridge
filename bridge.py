@@ -179,13 +179,18 @@ class MoonrakerCrealityBridge:
             logger.error(f"Error processing status update: {e}")
 
     def _process_status(self, status):
-        print_stats = status.get("print_stats", {})
-        display_status = status.get("display_status", {})
-        toolhead = status.get("toolhead", {})
-        extruder = status.get("extruder", {})
-        heater_bed = status.get("heater_bed", {})
-        fan = status.get("fan", {})
-        gcode_move = status.get("gcode_move", {})
+        # Ensure status is a dict before processing
+        if not isinstance(status, dict):
+            logger.debug(f"Status is not a dict: {type(status)}")
+            return
+
+        print_stats = status.get("print_stats", {}) or {}
+        display_status = status.get("display_status", {}) or {}
+        toolhead = status.get("toolhead", {}) or {}
+        extruder = status.get("extruder", {}) or {}
+        heater_bed = status.get("heater_bed", {}) or {}
+        fan = status.get("fan", {}) or {}
+        gcode_move = status.get("gcode_move", {}) or {}
 
         mr_state = print_stats.get("state", "standby")
         mr_filename = print_stats.get("filename", "")

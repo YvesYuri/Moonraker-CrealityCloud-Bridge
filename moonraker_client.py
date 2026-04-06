@@ -89,7 +89,20 @@ class MoonrakerClient:
 
         if "method" in data:
             method = data["method"]
-            params = data.get("params", {})
+            raw_params = data.get("params")
+
+            # Normalize params to dict - Moonraker can send different formats
+            params = {}
+            if isinstance(raw_params, dict):
+                params = raw_params
+            elif isinstance(raw_params, list) and len(raw_params) > 0:
+                # Sometimes params is a list with one dict
+                if isinstance(raw_params[0], dict):
+                    params = raw_params[0]
+                else:
+                    logger.debug(f"Unexpected list params format: {raw_params}")
+            else:
+                logger.debug(f"Unexpected params type: {type(raw_params)}, value: {raw_params}")
 
             if method == "notify_status_update":
                 self._handle_status_update(params)
@@ -114,7 +127,26 @@ class MoonrakerClient:
         self.send_request("printer.objects.subscribe", {"objects": objects})
 
     def _handle_status_update(self, params):
-        status = params.get("status", {})
+        # Handle different message formats from Moonraker
+        if not isinstance(params, dict):
+            logger.debug(f"Unexpected params type in status_update: {type(params)}")
+            return
+
+        # Try to get status from params - Moonraker sends it in different ways
+        status = None
+        if "status" in params:
+            status = params.get("status")
+        elif "heater_bed" in params or "extruder" in params or "print_stats" in params:
+            # Sometimes params IS the status object directly
+            status = params
+        else:
+            logger.debug(f"No status found in params: {params}")
+            return
+
+        if not isinstance(status, dict):
+            logger.debug(f"Status is not a dict: {type(status)}, value: {status}")
+            return
+
         for key, value in status.items():
             if key in self._status_cache:
                 self._status_cache[key].update(value)
@@ -128,6 +160,9 @@ class MoonrakerClient:
                 logger.error(f"Status callback error: {e}")
 
     def _handle_history_update(self, params):
+        if not isinstance(params, dict):
+            logger.debug(f"Unexpected params type in history_update: {type(params)}")
+            return
         for cb in self._callbacks["history_update"]:
             try:
                 cb(params)
@@ -135,6 +170,9 @@ class MoonrakerClient:
                 logger.error(f"History callback error: {e}")
 
     def _handle_filelist_changed(self, params):
+        if not isinstance(params, dict):
+            logger.debug(f"Unexpected params type in filelist_changed: {type(params)}")
+            return
         for cb in self._callbacks["filelist_changed"]:
             try:
                 cb(params)
@@ -142,6 +180,9 @@ class MoonrakerClient:
                 logger.error(f"Filelist callback error: {e}")
 
     def _handle_gcode_response(self, params):
+        if not isinstance(params, dict):
+            logger.debug(f"Unexpected params type in gcode_response: {type(params)}")
+            return
         for cb in self._callbacks["gcode_response"]:
             try:
                 cb(params)
